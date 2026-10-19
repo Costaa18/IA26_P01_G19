@@ -1,0 +1,26 @@
+[project]
+name = "ia26-p01-g19"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Costa", email = "afonsovelosof@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "folium>=0.20.0",
+    "ipykernel>=7.4.0",
+    "jupyter>=1.1.1",
+    "matplotlib>=3.11.2",
+    "notebook>=7.6.3",
+    "numpy>=2.5.4",
+    "pandas>=3.0.6",
+    "seaborn>=0.13.2",
+]
+
+[project.scripts]
+ia26-p01-g19 = "ia26_p01_g19:main"
+
+[build-system]
+requires = ["uv_build>=0.12.18,<0.13.0"]
+build-backend = "uv_build"
