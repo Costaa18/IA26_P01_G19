@@ -66,36 +66,72 @@ class Problem:
             loader = DataLoader(data_dir)
         vehicles_df = loader.load_vehicles()
         order_items_df = loader.load_order_items()
+        orders_df = loader.load_orders()
+        products_df = loader.load_products()
+        locations_df = loader.load_locations()
         dist_df = loader.load_distance_matrix()
+
+        collection_locations = {
+            str(row["ref_id"]): str(row["location_id"])
+            for _, row in locations_df[
+                locations_df["location_type"] == "collection_center"
+            ].iterrows()
+        }
 
         # Create Vehicle for each one
         vehicles = {
             str(row["vehicle_id"]): Vehicle(
                 vehicle_id=str(row["vehicle_id"]),
-                center_id=str(row["center_id"]),
+                center_id=collection_locations[str(row["center_id"])],
                 capacity=float(row["capacity_kg"]),
             )
             for _, row in vehicles_df.iterrows()
         }
 
         # Create Request for each order item
+        producer_locations = {
+            str(row["ref_id"]): str(row["location_id"])
+            for _, row in locations_df[
+                locations_df["location_type"] == "producer"
+            ].iterrows()
+        }
+        order_delivery_locations = {
+            str(row["order_id"]): str(row["delivery_location_id"])
+            for _, row in orders_df.iterrows()
+        }
+        delivery_locations = {
+            str(row["ref_id"]): str(row["location_id"])
+            for _, row in locations_df[
+                locations_df["location_type"] == "delivery_location"
+            ].iterrows()
+        }
+        product_data = products_df.set_index("product_id").to_dict(orient="index")
+
         requests = {
             str(row["order_item_id"]): Request(
                 item_id=str(row["order_item_id"]),
                 order_id=str(row["order_id"]),
-                pickup_location_id=str(row.get("producer_id", "")),
-                delivery_location_id=str(row.get("delivery_location_id", "")),
+                pickup_location_id=producer_locations[
+                    str(product_data[row["product_id"]]["producer_id"])
+                ],
+                delivery_location_id=delivery_locations[
+                    order_delivery_locations[str(row["order_id"])]
+                ],
                 pickup_start=row["availability_start"],
                 pickup_end=row["availability_end"],
                 delivery_start=row["delivery_start"],
                 delivery_end=row["delivery_end"],
-                demand=float(row.get("weight", 1.0)),
+                demand=float(row["quantity"])
+                * float(product_data[row["product_id"]]["unit_weight_kg"]),
             )
             for _, row in order_items_df.iterrows()
         }
 
         # Create a distance lookup dictionary for quick access
-        dist_lookup = dist_df.set_index(["origin", "destination"])[
+        dist_lookup = dist_df.assign(
+            origin_location_id=dist_df["origin_location_id"].astype(str),
+            destination_location_id=dist_df["destination_location_id"].astype(str),
+        ).set_index(["origin_location_id", "destination_location_id"])[
             ["distance_km", "duration_min"]
         ].to_dict(orient="index")
 
@@ -255,3 +291,36 @@ class Problem:
             total_solution_cost += self.route_cost(vehicle_id, stops, return_to_depot=return_to_depot)
 
         return total_solution_cost
+
+    def route_cost(
+        self, vehicle_id: str, stops: list[Stop], return_to_depot: bool = False
+    ) -> float:
+        """Calculate the total distance travelled by one vehicle in kilometres."""
+        vehicle = self.vehicles.get(vehicle_id)
+        if vehicle is None:
+            raise ValueError(f"Vehicle {vehicle_id} does not exist.")
+
+        current_location = vehicle.center_id
+        total_distance = 0.0
+
+        for stop in stops:
+            if current_location == stop.location_id:
+                current_location = stop.location_id
+                continue
+            route_info = self.distance_matrix.get((current_location, stop.location_id))
+            if route_info is None:
+                raise ValueError(
+                    f"Route between {current_location} and {stop.location_id} not found."
+                )
+            total_distance += float(route_info["distance_km"])
+            current_location = stop.location_id
+
+        if return_to_depot and stops:
+            route_info = self.distance_matrix.get((current_location, vehicle.center_id))
+            if route_info is None:
+                raise ValueError(
+                    f"Route between {current_location} and {vehicle.center_id} not found."
+                )
+            total_distance += float(route_info["distance_km"])
+
+        return total_distance
