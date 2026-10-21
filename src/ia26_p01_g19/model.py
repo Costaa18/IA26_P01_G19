@@ -73,7 +73,7 @@ class Problem:
             str(row["vehicle_id"]): Vehicle(
                 vehicle_id=str(row["vehicle_id"]),
                 center_id=str(row["center_id"]),
-                capacity=float(row["capacity"]),
+                capacity=float(row["capacity_kg"]),
             )
             for _, row in vehicles_df.iterrows()
         }

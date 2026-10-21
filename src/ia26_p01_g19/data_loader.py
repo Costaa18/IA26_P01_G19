@@ -18,7 +18,7 @@ class DataLoader:
         return df
 
     def load_order_items(self) -> pd.DataFrame:
-        df = pd.read_csv(self.data_dir / "orders_items.csv")
+        df = pd.read_csv(self.data_dir / "order_items.csv")
         time_cols = [
             "availability_start",
             "availability_end",
