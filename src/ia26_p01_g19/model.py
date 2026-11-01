@@ -25,12 +25,17 @@ class Vehicle:
     capacity: float
 
 
-@dataclass
+@dataclass(frozen=True)
 class State:
-    routes: dict[str, list[str]]
-    current_time: dict[str, datetime]
-    current_load: dict[str, float]
-    pending_requests: set[str]
+    """Immutable state used while exploring candidate routes."""
+
+    routes: tuple[tuple["Stop", ...], ...]
+    current_locations: tuple[str, ...]
+    current_times: tuple[datetime, ...]
+    current_loads: tuple[float, ...]
+    picked_by_vehicle: tuple[frozenset[str], ...]
+    delivered_requests: frozenset[str]
+    cost: float = 0.0
 
 
 class ActionType(Enum):
@@ -160,11 +165,19 @@ class Problem:
         return timedelta(minutes=duration_minutes)
 
     def is_route_feasible(
-        self, vehicle_id: str, stops: list[Stop], departure_time: datetime | None = None
+        self,
+        vehicle_id: str,
+        stops: list[Stop],
+        departure_time: datetime | None = None,
+        require_complete: bool = True,
     ) -> tuple[bool, str]:
         """
         Validate if a sequence of stops for a vehicle is feasible.
         Returns (True, "OK") if feasible, or (False, "reason") if it violates rules.
+
+        When ``require_complete`` is false, a route may end with picked-up
+        requests that have not yet been delivered. This is useful while
+        expanding partial states during search.
         """
         vehicle = self.vehicles.get(vehicle_id)
         if not vehicle:
@@ -271,12 +284,26 @@ class Problem:
             # Update the current location to the stop's location for the next iteration
             current_location = stop.location_id
 
-        # After processing all stops, check if all picked up items have been delivered
-        if picked_up_items != delivered_items:
+        # A complete route must deliver every request that it picked up.
+        if require_complete and picked_up_items != delivered_items:
             uncompleted = picked_up_items - delivered_items
             return False, f"Stop {idx}: The route ended without delivering the items: {uncompleted}"
 
         return True, "Route is valid."
+
+    def is_partial_route_feasible(
+        self,
+        vehicle_id: str,
+        stops: list[Stop],
+        departure_time: datetime | None = None,
+    ) -> tuple[bool, str]:
+        """Validate a route prefix during informed-search expansion."""
+        return self.is_route_feasible(
+            vehicle_id,
+            stops,
+            departure_time=departure_time,
+            require_complete=False,
+        )
 
     def cost_function(self, solution: dict[str, list[Stop]], return_to_depot: bool = False) -> float:
         """
