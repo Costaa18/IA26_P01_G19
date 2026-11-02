@@ -203,9 +203,11 @@ def _search(
                 vehicle_id: list(route)
                 for vehicle_id, route in zip(_vehicle_ids(problem), state.routes)
             }
+
+            final_cost = problem.cost_function(solution)
             return SearchResult(
                 solution=solution,
-                cost=state.cost,
+                cost=final_cost,
                 expanded_nodes=expanded_nodes,
                 generated_nodes=generated_nodes,
                 elapsed_seconds=perf_counter() - started,
