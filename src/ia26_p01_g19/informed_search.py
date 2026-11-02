@@ -269,3 +269,39 @@ def a_star_search(
         max_expansions=max_expansions,
     )
 
+def run_informed_search_experiments(
+    problem: Problem,
+    max_expansions: int | None = None,
+) -> dict[str, SearchResult]:
+    """Run both search algorithms with each of the available heuristics.
+
+    The result keys identify the algorithm and heuristic used, making the
+    returned mapping suitable for tabular comparison in a notebook.
+    """
+    experiments = (
+        (
+            "greedy_request_chain",
+            greedy_best_first_search,
+            heuristic_request_chain,
+        ),
+        (
+            "greedy_next_required_location",
+            greedy_best_first_search,
+            heuristic_next_required_location,
+        ),
+        (
+            "a_star_request_chain",
+            a_star_search,
+            heuristic_request_chain,
+        ),
+        (
+            "a_star_next_required_location",
+            a_star_search,
+            heuristic_next_required_location,
+        ),
+    )
+
+    return {
+        name: algorithm(problem, heuristic, max_expansions=max_expansions)
+        for name, algorithm, heuristic in experiments
+    }

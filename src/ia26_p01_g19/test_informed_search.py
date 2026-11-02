@@ -10,6 +10,7 @@ from .informed_search import (
     expand_state,
     greedy_best_first_search,
     initial_state,
+    run_informed_search_experiments,
 )
 from .model import Problem
  
@@ -98,6 +99,23 @@ class InformedSearchTests(unittest.TestCase):
         self.assertFalse(result.found)
         self.assertTrue(result.stopped_by_limit)
         self.assertEqual(result.expanded_nodes, 0)
+
+    def test_experiments_run_all_algorithm_heuristic_combinations(self):
+        results = run_informed_search_experiments(
+            self.problem,
+            max_expansions=10_000,
+        )
+
+        self.assertEqual(
+            set(results),
+            {
+                "greedy_request_chain",
+                "greedy_next_required_location",
+                "a_star_request_chain",
+                "a_star_next_required_location",
+            },
+        )
+        self.assertTrue(all(result.found for result in results.values()))
  
     def assert_solution_is_feasible(self, solution):
         delivered_request_ids = set()
