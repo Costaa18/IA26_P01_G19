@@ -7,6 +7,7 @@ from .heuristics import (
 )
 from .informed_search import (
     a_star_search,
+    constructive_greedy_solution,
     expand_state,
     greedy_best_first_search,
     initial_state,
@@ -136,10 +137,29 @@ class InformedSearchTests(unittest.TestCase):
             "expanded_nodes",
             "generated_nodes",
             "stopped_by_limit",
+            "used_constructive_fallback",
         }
         self.assertTrue(all(set(record) == expected_fields for record in records))
         self.assertTrue(all(record["found"] for record in records))
         self.assertTrue(all(record["cost_km"] is not None for record in records))
+
+    def test_constructive_solution_is_feasible_for_complete_instance(self):
+        complete_problem = Problem.from_loader(data_dir=DATA_DIR)
+        solution = constructive_greedy_solution(complete_problem)
+
+        self.assertIsNotNone(solution)
+        self.assertEqual(
+            {
+                stop.request_id
+                for stops in solution.values()
+                for stop in stops
+                if stop.action.value == "DELIVERY"
+            },
+            set(complete_problem.requests),
+        )
+        for vehicle_id, stops in solution.items():
+            feasible, reason = complete_problem.is_route_feasible(vehicle_id, stops)
+            self.assertTrue(feasible, reason)
  
     def assert_solution_is_feasible(self, solution):
         delivered_request_ids = set()

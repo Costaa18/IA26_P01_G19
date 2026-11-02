@@ -22,6 +22,7 @@ class SearchResult:
     elapsed_seconds: float
     found: bool
     stopped_by_limit: bool = False
+    used_constructive_fallback: bool = False
 
 
 def _vehicle_ids(problem: Problem) -> tuple[str, ...]:
@@ -180,24 +181,119 @@ def _is_goal(problem: Problem, state: State) -> bool:
     return len(state.delivered_requests) == len(problem.requests)
 
 
+def constructive_greedy_solution(
+    problem: Problem,
+) -> dict[str, list[Stop]] | None:
+    """Build a feasible solution by inserting complete request pairs.
+
+    Requests with the earliest pickup deadlines are considered first. For each
+    request, every vehicle and every pickup/delivery insertion pair is tested
+    with the model's feasibility checker.
+    """
+    routes = {vehicle_id: [] for vehicle_id in _vehicle_ids(problem)}
+
+    requests = sorted(
+        problem.requests.values(),
+        key=lambda request: request.pickup_end,
+    )
+    for request in requests:
+        pickup = Stop(
+            request_id=request.item_id,
+            action=ActionType.PICKUP,
+            location_id=request.pickup_location_id,
+        )
+        delivery = Stop(
+            request_id=request.item_id,
+            action=ActionType.DELIVERY,
+            location_id=request.delivery_location_id,
+        )
+        best_insertion: tuple[float, str, list[Stop]] | None = None
+
+        for vehicle_id, route in routes.items():
+            for pickup_index in range(len(route) + 1):
+                for delivery_index in range(pickup_index + 1, len(route) + 2):
+                    candidate = (
+                        route[:pickup_index]
+                        + [pickup]
+                        + route[pickup_index : delivery_index - 1]
+                        + [delivery]
+                        + route[delivery_index - 1 :]
+                    )
+                    feasible, _ = problem.is_route_feasible(vehicle_id, candidate)
+                    if not feasible:
+                        continue
+
+                    candidate_cost = problem.route_cost(vehicle_id, candidate)
+                    insertion = (candidate_cost, vehicle_id, candidate)
+                    if best_insertion is None or insertion[0] < best_insertion[0]:
+                        best_insertion = insertion
+
+        if best_insertion is None:
+            return None
+
+        _, vehicle_id, route = best_insertion
+        routes[vehicle_id] = route
+
+    return routes
+
+
+def _urgency_score(problem: Problem, state: State) -> float:
+    """Return a tie-break score favouring states with tighter windows."""
+    picked = set().union(*state.picked_by_vehicle)
+    remaining_deadlines = []
+
+    for request_id, request in problem.requests.items():
+        if request_id in state.delivered_requests:
+            continue
+        deadline = (
+            request.delivery_end
+            if request_id in picked
+            else request.pickup_end
+        )
+        remaining_deadlines.append(
+            min(
+                (deadline - current_time).total_seconds()
+                for current_time in state.current_times
+            )
+        )
+
+    return min(remaining_deadlines, default=0.0)
+
+
 def _search(
     problem: Problem,
     heuristic: Heuristic,
     *,
     use_path_cost: bool,
     max_expansions: int | None,
+    use_constructive_fallback: bool,
 ) -> SearchResult:
     started = perf_counter()
     initial = initial_state(problem)
-    frontier: list[tuple[float, int, State]] = []
+    frontier: list[tuple[float, float, int, State]] = []
     sequence = count()
-    heappush(frontier, (heuristic(problem, initial), next(sequence), initial))
+    heappush(
+        frontier,
+        (
+            heuristic(problem, initial),
+            _urgency_score(problem, initial),
+            next(sequence),
+            initial,
+        ),
+    )
     best_cost = {_state_key(initial): initial.cost}
+    expanded_costs: dict[tuple, float] = {}
     expanded_nodes = 0
     generated_nodes = 1
 
     while frontier:
-        _, _, state = heappop(frontier)
+        _, _, _, state = heappop(frontier)
+        state_key = _state_key(state)
+        if state.cost > best_cost.get(state_key, float("inf")):
+            continue
+        if state.cost >= expanded_costs.get(state_key, float("inf")):
+            continue
+        expanded_costs[state_key] = state.cost
         if _is_goal(problem, state):
             solution = {
                 vehicle_id: list(route)
@@ -227,7 +323,32 @@ def _search(
             priority = heuristic(problem, child)
             if use_path_cost:
                 priority += child.cost
-            heappush(frontier, (priority, next(sequence), child))
+            heappush(
+                frontier,
+                (
+                    priority,
+                    _urgency_score(problem, child),
+                    next(sequence),
+                    child,
+                ),
+            )
+
+    if use_constructive_fallback:
+        solution = constructive_greedy_solution(problem)
+        if solution is not None:
+            return SearchResult(
+                solution=solution,
+                cost=problem.cost_function(solution),
+                expanded_nodes=expanded_nodes,
+                generated_nodes=generated_nodes,
+                elapsed_seconds=perf_counter() - started,
+                found=True,
+                stopped_by_limit=(
+                    max_expansions is not None
+                    and expanded_nodes >= max_expansions
+                ),
+                used_constructive_fallback=True,
+            )
 
     return SearchResult(
         solution=None,
@@ -246,6 +367,7 @@ def greedy_best_first_search(
     problem: Problem,
     heuristic: Heuristic,
     max_expansions: int | None = None,
+    use_constructive_fallback: bool = False,
 ) -> SearchResult:
     """Run Greedy Best-First Search with f(n) = h(n)."""
     return _search(
@@ -253,6 +375,7 @@ def greedy_best_first_search(
         heuristic,
         use_path_cost=False,
         max_expansions=max_expansions,
+        use_constructive_fallback=use_constructive_fallback,
     )
 
 
@@ -260,6 +383,7 @@ def a_star_search(
     problem: Problem,
     heuristic: Heuristic,
     max_expansions: int | None = None,
+    use_constructive_fallback: bool = False,
 ) -> SearchResult:
     """Run A* with f(n) = g(n) + h(n)."""
     return _search(
@@ -267,11 +391,13 @@ def a_star_search(
         heuristic,
         use_path_cost=True,
         max_expansions=max_expansions,
+        use_constructive_fallback=use_constructive_fallback,
     )
 
 def run_informed_search_experiments(
     problem: Problem,
     max_expansions: int | None = None,
+    use_constructive_fallback: bool = False,
 ) -> dict[str, SearchResult]:
     """Run both search algorithms with each of the available heuristics.
 
@@ -302,7 +428,12 @@ def run_informed_search_experiments(
     )
 
     return {
-        name: algorithm(problem, heuristic, max_expansions=max_expansions)
+        name: algorithm(
+            problem,
+            heuristic,
+            max_expansions=max_expansions,
+            use_constructive_fallback=use_constructive_fallback,
+        )
         for name, algorithm, heuristic in experiments
     }
 
@@ -332,6 +463,7 @@ def informed_search_results_to_records(
                 "expanded_nodes": result.expanded_nodes,
                 "generated_nodes": result.generated_nodes,
                 "stopped_by_limit": result.stopped_by_limit,
+                "used_constructive_fallback": result.used_constructive_fallback,
             }
         )
     return records
