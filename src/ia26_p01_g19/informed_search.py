@@ -305,3 +305,33 @@ def run_informed_search_experiments(
         name: algorithm(problem, heuristic, max_expansions=max_expansions)
         for name, algorithm, heuristic in experiments
     }
+
+
+def informed_search_results_to_records(
+    results: dict[str, SearchResult],
+) -> list[dict[str, object]]:
+    """Convert experiment results into rows suitable for a comparison table."""
+    records = []
+    for experiment, result in results.items():
+        if experiment.startswith("greedy_"):
+            algorithm = "greedy"
+            heuristic = experiment.removeprefix("greedy_")
+        elif experiment.startswith("a_star_"):
+            algorithm = "a_star"
+            heuristic = experiment.removeprefix("a_star_")
+        else:
+            raise ValueError(f"Unknown informed-search experiment: {experiment}")
+        records.append(
+            {
+                "experiment": experiment,
+                "algorithm": algorithm,
+                "heuristic": heuristic,
+                "found": result.found,
+                "cost_km": result.cost,
+                "elapsed_seconds": result.elapsed_seconds,
+                "expanded_nodes": result.expanded_nodes,
+                "generated_nodes": result.generated_nodes,
+                "stopped_by_limit": result.stopped_by_limit,
+            }
+        )
+    return records

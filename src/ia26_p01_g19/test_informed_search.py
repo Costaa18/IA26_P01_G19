@@ -10,6 +10,7 @@ from .informed_search import (
     expand_state,
     greedy_best_first_search,
     initial_state,
+    informed_search_results_to_records,
     run_informed_search_experiments,
 )
 from .model import Problem
@@ -116,6 +117,29 @@ class InformedSearchTests(unittest.TestCase):
             },
         )
         self.assertTrue(all(result.found for result in results.values()))
+
+    def test_experiment_results_are_recorded_for_comparison(self):
+        results = run_informed_search_experiments(
+            self.problem,
+            max_expansions=10_000,
+        )
+        records = informed_search_results_to_records(results)
+
+        self.assertEqual(len(records), 4)
+        expected_fields = {
+            "experiment",
+            "algorithm",
+            "heuristic",
+            "found",
+            "cost_km",
+            "elapsed_seconds",
+            "expanded_nodes",
+            "generated_nodes",
+            "stopped_by_limit",
+        }
+        self.assertTrue(all(set(record) == expected_fields for record in records))
+        self.assertTrue(all(record["found"] for record in records))
+        self.assertTrue(all(record["cost_km"] is not None for record in records))
  
     def assert_solution_is_feasible(self, solution):
         delivered_request_ids = set()
