@@ -8,6 +8,7 @@ O projeto implementa um agente para o CPDPTW de distribuição local:
 - `informed_search.py`: Greedy Best-First, A* e heurísticas;
 - `hill_climbing.py`: pesquisa local com realocação e troca de pedidos;
 - `csp.py`: CSP com backtracking, MRV e contagem de recuos;
+- `01_eda_tiny.ipynb`: análise exploratória, integridade dos dados, janelas temporais e mapa das localizações;
 - `main.ipynb`: experiências, validações, rotas, gráficos e comparação final.
 
 ## Executar
@@ -17,3 +18,7 @@ uv run python -m unittest discover -s src -p "test*.py"
 ```
 
 O notebook deve ser executado a partir da raiz do repositório. A pesquisa informada usa um limite de expansões e pode usar o fallback construtivo; essa situação é indicada por `used_constructive_fallback`. O Hill-Climbing parte da solução viável e regista a evolução do custo. O CSP reporta `backtracks`, atribuições, tempo e custo recalculado pelo modelo.
+
+### Repositório
+
+[https://github.com/Costaa18/IA26_P01_G19](https://github.com/Costaa18/IA26_P01_G19)
